@@ -3516,6 +3516,15 @@
         "tslib": "^2.3.0",
       },
     },
+    "packages/pieces/community/ingv": {
+      "name": "@activepieces/piece-ingv",
+      "version": "0.0.1",
+      "dependencies": {
+        "@activepieces/pieces-common": "workspace:*",
+        "@activepieces/pieces-framework": "workspace:*",
+        "@activepieces/shared": "workspace:*",
+      },
+    },
     "packages/pieces/community/insightly": {
       "name": "@activepieces/piece-insightly",
       "version": "0.1.3",
@@ -8912,6 +8921,8 @@
     "@activepieces/piece-imap": ["@activepieces/piece-imap@workspace:packages/pieces/community/imap"],
 
     "@activepieces/piece-influencers-club": ["@activepieces/piece-influencers-club@workspace:packages/pieces/community/influencers-club"],
+
+    "@activepieces/piece-ingv": ["@activepieces/piece-ingv@workspace:packages/pieces/community/ingv"],
 
     "@activepieces/piece-insightly": ["@activepieces/piece-insightly@workspace:packages/pieces/community/insightly"],
 
