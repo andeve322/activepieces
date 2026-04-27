@@ -76,7 +76,7 @@ function ConnectionSelect(params: ConnectionSelectProps) {
   const isGlobalConnection =
     selectedConnection?.scope === AppConnectionScope.PLATFORM;
   const dynamicInputModeToggled =
-    form.getValues().settings.propertySettings['auth']?.type ===
+    form.getValues().settings.propertySettings?.['auth']?.type ===
     PropertyExecutionType.DYNAMIC;
   const isPLatformAdmin = useIsPlatformAdmin();
 

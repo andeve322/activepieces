@@ -1,4 +1,4 @@
-import { FlowOperationType } from '@activepieces/shared';
+import { FlowOperationType, FlowTriggerType } from '@activepieces/shared';
 import { useMutation } from '@tanstack/react-query';
 import axios from 'axios';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
@@ -92,12 +92,36 @@ export const CopilotModal = ({
     console.log('Applying flowJson:', JSON.stringify(flowJson, null, 2));
     
     // Sanitize generated JSON for Activepieces
-    const sanitizedTrigger = JSON.parse(JSON.stringify(flowJson.trigger || {}));
+    const sanitizedTrigger = { ...flowJson.trigger };
+    if (!sanitizedTrigger.type || (sanitizedTrigger.type === 'PIECE' && !sanitizedTrigger.settings?.pieceName)) {
+      sanitizedTrigger.type = FlowTriggerType.EMPTY;
+      sanitizedTrigger.settings = {};
+      sanitizedTrigger.displayName = 'Trigger';
+    }
+    sanitizedTrigger.name = 'trigger';
 
-    // Recursive function to ensure unique and meaningful step names
+    // Recursive function to ensure unique and meaningful step names and clean up empty nextAction
     const usedNames = new Set<string>();
     const assignNames = (step: any, index: number) => {
       if (!step) return;
+
+      // Clean up empty nextAction - backend fails if it's an empty object
+      if (step.nextAction && Object.keys(step.nextAction).length === 0) {
+        delete step.nextAction;
+      }
+
+      if (step.settings) {
+          // Ensure propertySettings is initialized
+          if (!step.settings.propertySettings) {
+              step.settings.propertySettings = {};
+          }
+          // Fix array inputs that should be strings (common AI mistake)
+          for (const key in step.settings.input) {
+              if (Array.isArray(step.settings.input[key]) && step.settings.input[key].length === 1) {
+                  step.settings.input[key] = step.settings.input[key][0];
+              }
+          }
+      }
       
       let baseName = step.name;
       
@@ -152,6 +176,9 @@ export const CopilotModal = ({
             .split('_')
             .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
             .join(' ');
+        }
+        if (step.settings && !step.settings.propertySettings) {
+          step.settings.propertySettings = {};
         }
       }
 

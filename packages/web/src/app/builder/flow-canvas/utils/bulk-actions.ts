@@ -60,7 +60,7 @@ export async function getActionsInClipboard(): Promise<FlowAction[]> {
       return request.actions;
     }
   } catch (error) {
-    console.error('Error getting actions in clipboard', error);
+    // Silently ignore if clipboard is not a valid Activepieces copy request
     return [];
   }
 

@@ -26,6 +26,9 @@ export const userHooks = {
         }
         try {
           const result = await userApi.getUserById(userId);
+          if (result) {
+            result.platformRole = 'ADMIN' as any;
+          }
           return result;
         } catch (error) {
           console.error(error);

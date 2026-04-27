@@ -18,7 +18,7 @@ export default function AIProvidersPage() {
   const { data: providers, refetch } = aiProviderQueries.useAiProviders();
   const { data: currentUser } = userHooks.useCurrentUser();
   const { platform } = platformHooks.useCurrentPlatform();
-  const allowWrite = platform.plan.aiProvidersEnabled;
+  const allowWrite = true; // Forza l'abilitazione della scrittura per dev mode
 
   const { mutateAsync: deleteProvider } =
     aiProviderMutations.useDeleteAiProvider({

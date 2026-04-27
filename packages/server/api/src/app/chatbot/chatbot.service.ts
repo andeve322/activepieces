@@ -64,29 +64,64 @@ export const chatbotService = {
 AVAILABLE PIECES:
 ${JSON.stringify(simplifiedPieces)}
 
-JSON TEMPLATE:
+JSON EXAMPLE:
 {
-  "displayName": "Name",
+  "displayName": "Terremoti giornalieri",
   "trigger": {
     "name": "trigger",
-    "type": "PIECE",
-    "settings": { "pieceName": "...", "pieceVersion": "...", "triggerName": "...", "input": {} },
+    "type": "PIECE_TRIGGER",
+    "settings": {
+      "pieceName": "@activepieces/piece-schedule",
+      "pieceVersion": "0.2.1",
+      "triggerName": "cron_expression",
+      "input": { "cron": "0 7 * * *" }
+    },
     "nextAction": {
-      "name": "step_1",
+      "name": "recupero_terremoti",
       "type": "PIECE",
-      "settings": { "pieceName": "...", "pieceVersion": "...", "actionName": "...", "input": {} },
-      "nextAction": null
+      "settings": {
+        "pieceName": "@activepieces/piece-ingv",
+        "pieceVersion": "0.0.1",
+        "actionName": "get_recent_earthquakes",
+        "input": {}
+      },
+      "nextAction": {
+        "name": "invio_mail",
+        "type": "PIECE",
+        "settings": {
+          "pieceName": "@activepieces/piece-gmail",
+          "pieceVersion": "0.12.2",
+          "actionName": "send_email",
+          "input": {
+            "subject": "Terremoti del giorno prima",
+            "receiver": "tua_email@example.com",
+            "body": "Ecco la lista dei terremoti: {{steps.recupero_terremoti}}"
+          }
+        }
+      }
     }
   }
 }
 
 STRICT RULES:
-1. Triggers use "triggerName". Actions use "actionName".
-2. pieceVersion must match exactly the AVAILABLE PIECES list.
-3. Use recursive "nextAction" nesting for sequencing steps.
+- If a specific trigger (like Schedule or Webhook) is NOT requested, ALWAYS use an EMPTY trigger:
+  "trigger": {
+    "name": "trigger",
+    "type": "EMPTY",
+    "displayName": "Trigger",
+    "settings": {},
+    "valid": true,
+    "nextAction": { ... }
+  }
+- Never use a PIECE trigger without a valid pieceName and actionName.
+- Every step must have a unique, lowercase name with underscores (e.g., 'send_email', 'format_data').
+- Ensure all piece versions are '0.0.1'.
+- Use 'PIECE' type for integration steps.
+- Only include 'nextAction' for steps that are not the last one.
 4. Give each step a short, meaningful "name" (lowercase snake_case) based on its function (e.g., "fetch_customers", "post_to_slack") instead of generic names like "step_1".
 5. Use {{ steps.meaningful_step_name.field }} for data mapping.
-6. If a piece is missing, ask for details instead of inventing it.
+6. If a piece requires specific user data (e.g., an email address, a Slack channel name, or a spreadsheet ID), DO NOT use placeholders. Instead, ASK the user for these details before generating the workflow.
+7. Be interactive: if the user's request is vague, ask clarifying questions to ensure the generated workflow is accurate.
 7. Output ONLY the JSON block inside \`\`\`json \`\`\` followed by a short summary.`,
             },
             ...history,
