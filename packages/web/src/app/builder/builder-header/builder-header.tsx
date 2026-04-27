@@ -8,7 +8,7 @@ import {
 } from '@activepieces/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
-import { ChevronDown, CircleHelp, HistoryIcon } from 'lucide-react';
+import { ChevronDown, CircleHelp, HistoryIcon, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
   createSearchParams,
@@ -44,6 +44,7 @@ import { cn } from '@/lib/utils';
 
 import FlowActionMenu from '../../components/flow-actions-menu';
 import { flowCanvasConsts } from '../flow-canvas/utils/consts';
+import { CopilotModal } from '../copilot-modal';
 
 import { BuilderFlowStatusSection } from './flow-status';
 
@@ -174,8 +175,18 @@ export const BuilderHeader = () => {
     </div>
   );
 
+  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+
   const rightContent = (
     <div className="flex items-center justify-center gap-4">
+      <Button
+        variant="outline"
+        onClick={() => setIsCopilotOpen(true)}
+        className="gap-2 px-2 border-primary text-primary hover:bg-primary/10"
+      >
+        <Sparkles className="w-4 h-4" />
+        {t('AI Copilot')}
+      </Button>
       {showSupport && (
         <Button
           variant="ghost"
@@ -199,6 +210,7 @@ export const BuilderHeader = () => {
       )}
 
       <BuilderFlowStatusSection></BuilderFlowStatusSection>
+      <CopilotModal open={isCopilotOpen} onOpenChange={setIsCopilotOpen} applyOperation={applyOperation} />
     </div>
   );
 

@@ -130,7 +130,9 @@ function removeAnySubsequentAction(action: FlowAction): FlowAction {
 }
 
 function _importFlow(flowVersion: FlowVersion, request: ImportFlowRequest): FlowOperationRequest[] {
-    const existingActions = flowStructureUtil.getAllNextActionsWithoutChildren(flowVersion.trigger)
+    request.trigger.name = flowVersion.trigger.name
+
+    const existingActions = flowStructureUtil.getAllSteps(flowVersion.trigger).filter(step => !flowStructureUtil.isTrigger(step.type))
 
     const deleteOperations = existingActions.map(action =>
         createDeleteActionOperation(action.name),

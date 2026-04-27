@@ -39,16 +39,20 @@ const TestFlowWidget = () => {
 
   const triggerHasSampleData =
     flowVersion.trigger.type === FlowTriggerType.PIECE &&
-    !isNil(flowVersion.trigger.settings.sampleData?.lastTestDate);
+    !isNil(flowVersion.trigger.settings?.sampleData?.lastTestDate);
 
-  const isChatTrigger = pieceSelectorUtils.isChatTrigger(
-    flowVersion.trigger.settings.pieceName,
-    flowVersion.trigger.settings.triggerName,
-  );
-  const isManualTrigger = pieceSelectorUtils.isManualTrigger({
-    pieceName: flowVersion.trigger.settings.pieceName,
-    triggerName: flowVersion.trigger.settings.triggerName,
-  });
+  const isChatTrigger =
+    flowVersion.trigger.type === FlowTriggerType.PIECE &&
+    pieceSelectorUtils.isChatTrigger(
+      flowVersion.trigger.settings?.pieceName || '',
+      flowVersion.trigger.settings?.triggerName || '',
+    );
+  const isManualTrigger =
+    flowVersion.trigger.type === FlowTriggerType.PIECE &&
+    pieceSelectorUtils.isManualTrigger({
+      pieceName: flowVersion.trigger.settings?.pieceName || '',
+      triggerName: flowVersion.trigger.settings?.triggerName || '',
+    });
 
   const { mutate: runFlow, isPending: isTestingFlow } =
     flowHooks.useTestFlowOrStartManualTrigger({
