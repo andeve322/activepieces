@@ -10,4 +10,5 @@ export const localesMap = {
   [LocalesEnum.DUTCH]: 'Nederlands',
   [LocalesEnum.PORTUGUESE]: 'Português',
   [LocalesEnum.CHINESE_TRADITIONAL]: '繁體中文',
+  [LocalesEnum.ITALIAN]: 'Italiano',
 };

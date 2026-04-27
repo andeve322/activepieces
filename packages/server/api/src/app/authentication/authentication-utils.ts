@@ -15,10 +15,13 @@ export const authenticationUtils = (log: FastifyBaseLogger) => ({
         email,
         platformId,
     }: AssertUserIsInvitedToPlatformOrProjectParams): Promise<void> {
+        const edition = system.getEdition()
+        if (edition === ApEdition.COMMUNITY) {
+            return
+        }
         const isInvited = await userInvitationsService(log).hasAnyAcceptedInvitations({
             platformId,
             email,
-            
         })
         if (!isInvited) {
             throw new ActivepiecesError({
