@@ -71,7 +71,7 @@ function ConnectionSelect(params: ConnectionSelectProps) {
   const selectedConnection = connections?.data?.find(
     (connection) =>
       connection.externalId ===
-      removeBrackets(form.getValues().settings.input.auth ?? ''),
+      removeBrackets(form.getValues().settings.input?.auth ?? ''),
   );
   const isGlobalConnection =
     selectedConnection?.scope === AppConnectionScope.PLATFORM;
@@ -83,7 +83,7 @@ function ConnectionSelect(params: ConnectionSelectProps) {
   return (
     <FormField
       control={form.control}
-      key={form.getValues().settings.input.auth}
+      key={form.getValues().settings.input?.auth}
       name={'settings.input.auth'}
       render={({ field }) => (
         <>

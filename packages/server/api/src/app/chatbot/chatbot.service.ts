@@ -94,7 +94,7 @@ JSON EXAMPLE:
           "actionName": "send_email",
           "input": {
             "subject": "Terremoti del giorno prima",
-            "receiver": "tua_email@example.com",
+            "receiver": ["tua_email@example.com"],
             "body": "Ecco la lista dei terremoti: {{steps.recupero_terremoti}}"
           }
         }
@@ -103,26 +103,47 @@ JSON EXAMPLE:
   }
 }
 
-STRICT RULES:
-- If a specific trigger (like Schedule or Webhook) is NOT requested, ALWAYS use an EMPTY trigger:
+EXAMPLE — Send email manually (EMPTY trigger + Gmail):
+{
+  "displayName": "Invia Email",
   "trigger": {
     "name": "trigger",
     "type": "EMPTY",
     "displayName": "Trigger",
-    "settings": {},
+    "settings": { "propertySettings": {} },
     "valid": true,
-    "nextAction": { ... }
+    "nextAction": {
+      "name": "invia_email",
+      "type": "PIECE",
+      "displayName": "Invia Email",
+      "settings": {
+        "pieceName": "@activepieces/piece-gmail",
+        "pieceVersion": "0.0.1",
+        "actionName": "send_email",
+        "input": {
+          "subject": "Oggetto della mail",
+          "receiver": ["email@example.com"],
+          "body": "Corpo della mail."
+        },
+        "propertySettings": {}
+      }
+    }
   }
-- Never use a PIECE trigger without a valid pieceName and actionName.
+}
+
+STRICT RULES:
+- If a specific trigger (like Schedule or Webhook) is NOT requested, ALWAYS use an EMPTY trigger (type: EMPTY).
+- Never use a PIECE trigger without a valid pieceName and triggerName.
 - Every step must have a unique, lowercase name with underscores (e.g., 'send_email', 'format_data').
 - Ensure all piece versions are '0.0.1'.
+- For the Gmail piece, ALL email fields (receiver, cc, bcc, reply_to) MUST always be arrays of strings: ["email@example.com"]. NEVER use a plain string.
 - Use 'PIECE' type for integration steps.
 - Only include 'nextAction' for steps that are not the last one.
-4. Give each step a short, meaningful "name" (lowercase snake_case) based on its function (e.g., "fetch_customers", "post_to_slack") instead of generic names like "step_1".
-5. Use {{ steps.meaningful_step_name.field }} for data mapping.
-6. If a piece requires specific user data (e.g., an email address, a Slack channel name, or a spreadsheet ID), DO NOT use placeholders. Instead, ASK the user for these details before generating the workflow.
-7. Be interactive: if the user's request is vague, ask clarifying questions to ensure the generated workflow is accurate.
-7. Output ONLY the JSON block inside \`\`\`json \`\`\` followed by a short summary.`,
+- Give each step a short, meaningful "name" (lowercase snake_case) based on its function.
+- Use {{ steps.step_name.field }} for data mapping.
+- If a piece requires specific user data (e.g., an email address), ASK the user before generating the workflow.
+- Be interactive: if the user's request is vague, ask clarifying questions.
+- Output ONLY the JSON block inside \`\`\`json \`\`\` followed by a short summary.`,
             },
             ...history,
             { role: 'user', content: message },
@@ -232,10 +253,43 @@ STRICT RULES:
                             p.name === pieceName || p.name === `@activepieces/piece-${pieceName}`,
                         )
                         if (actualPiece) {
+                            log.info({ pieceName, actualName: actualPiece.name }, '[ChatbotService#fixVersions] Piece found')
                             step.settings.pieceName = actualPiece.name // ensure correct prefix
                             step.settings.pieceVersion = actualPiece.version // force correct version
+                            
+                            // Ensure input object exists to prevent frontend crashes
+                            if (!step.settings.input) {
+                                step.settings.input = {}
+                            }
+
+                            // Auto-fix for Gmail piece: convert email strings to arrays if necessary
+                            const isGmail = actualPiece.name === '@activepieces/piece-gmail' || actualPiece.name === 'gmail'
+                            
+                            if (isGmail) {
+                                const arrayFields = ['receiver', 'cc', 'bcc', 'reply_to']
+                                arrayFields.forEach((field) => {
+                                    const value = step.settings.input[field]
+                                    // Coerce any string value to an array — no exceptions
+                                    if (value && typeof value === 'string') {
+                                        log.info({ field, value }, '[ChatbotService#fixVersions] Coercing Gmail field to array')
+                                        let cleaned = value
+                                        // Strip spurious wrapping brackets added by some LLMs: "[email]" → "email"
+                                        if (cleaned.startsWith('[') && cleaned.endsWith(']')) {
+                                            cleaned = cleaned.substring(1, cleaned.length - 1).replace(/['"]/g, '').trim()
+                                        }
+                                        // Template expressions ({{ ... }}) must be kept as-is inside an array
+                                        if (cleaned.includes('{{')) {
+                                            step.settings.input[field] = [cleaned]
+                                        }
+                                        else {
+                                            step.settings.input[field] = cleaned.split(',').map((e: string) => e.trim()).filter((e: string) => e.length > 0)
+                                        }
+                                    }
+                                })
+                            }
                         }
                         else {
+                            log.warn({ pieceName }, '[ChatbotService#fixVersions] Piece not found, converting to EMPTY')
                             // LLM hallucinated an uninstalled piece. Convert to EMPTY to avoid 400 errors.
                             step.type = 'EMPTY'
                             step.settings = {}
@@ -270,7 +324,9 @@ STRICT RULES:
                         pieceVersion: firstPiece.version,
                         triggerName,
                         input: {},
-                    } : {},
+                    } : {
+                        input: {},
+                    },
                     nextAction: undefined,
                 },
             }

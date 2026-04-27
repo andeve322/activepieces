@@ -115,9 +115,13 @@ export const CopilotModal = ({
           if (!step.settings.propertySettings) {
               step.settings.propertySettings = {};
           }
-          // Fix array inputs that should be strings (common AI mistake)
+          // Flatten single-element arrays back to scalars (common AI over-wrapping mistake).
+          // Exception: Gmail email fields must stay as arrays — the piece schema requires it.
+          const gmailArrayFields = new Set(['receiver', 'cc', 'bcc', 'reply_to']);
+          const isGmailStep = step.settings.pieceName === '@activepieces/piece-gmail' || step.settings.pieceName === 'gmail';
           for (const key in step.settings.input) {
               if (Array.isArray(step.settings.input[key]) && step.settings.input[key].length === 1) {
+                  if (isGmailStep && gmailArrayFields.has(key)) continue;
                   step.settings.input[key] = step.settings.input[key][0];
               }
           }
