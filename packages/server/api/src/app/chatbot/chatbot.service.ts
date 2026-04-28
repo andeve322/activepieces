@@ -77,7 +77,7 @@ CRITICAL GOAL: NO UNNECESSARY QUESTIONS
 ══════════════════════════════════════════════
 - You MUST distinguish between STATIC DATA (emails, names) and DYNAMIC DATA (IDs, generated values).
 - NEVER ask the user for IDs (spreadsheetId, worksheetId, folderId, item_id) if a previous step generates them.
-- Use the {{steps.STEP_NAME.output.FIELD}} syntax to map outputs automatically.
+- Use the {{STEP_NAME.FIELD}} syntax to map outputs automatically.
 - If you see a piece that requires an ID (like Google Sheets), check if you can add a 'Create' or 'List' step before it to get that ID dynamically.
 - ONLY ask questions for truly missing personal information (e.g., 'What is the recipient email?').
 
@@ -86,12 +86,15 @@ STRICT STRUCTURAL RULES
 ══════════════════════════════════════════════
 - Step types: EMPTY (trigger only), PIECE_TRIGGER, PIECE, LOOP_ON_ITEMS. No others.
 - Every step/trigger MUST have "valid": true.
-- Every step/trigger MUST have "displayName" (e.g., "Trigger", "Invia Email").
-- Every step/trigger MUST have "lastUpdatedDate": "2024-04-28T10:30:00.000Z" (ISO string).
 - Gmail fields (receiver, cc, etc.) MUST be arrays: ["email@example.com"].
 - Google Sheets 'insert_row' values MUST be an object: {"Column Name": "Value"}.
 - nextAction MUST be nested inside the step, NEVER at the JSON root.
-- Loop variables: ALWAYS {{steps.LOOP_NAME.output.item.field}}.
+- Loop variables: ALWAYS {{LOOP_NAME.item.field}}. (No 'steps.' prefix, no '.output' in the middle)
+- Trigger variables: ALWAYS {{trigger.FIELD}}. (No 'steps.' prefix, no '.output' in the middle)
+- Action variables: ALWAYS {{STEP_NAME.FIELD}}. (No 'steps.' prefix, no '.output' in the middle)
+- JSON values: Ensure all field values are valid JSON types.
+- Array fields: piece input fields that expect a list of items (like Gmail receivers) MUST be an array: ["email@example.com"].
+- Object fields: piece input fields that expect key-value pairs (like Google Sheets values) MUST be an object: {"Col": "Val"}.
 
 AVAILABLE PIECES:
 ${JSON.stringify(simplifiedPieces)}
@@ -107,17 +110,15 @@ EXAMPLE 1 — Simple: Send email (EMPTY trigger)
     "type": "EMPTY",
     "valid": true,
     "displayName": "Trigger",
-    "lastUpdatedDate": "2024-04-28T10:30:00.000Z",
-    "settings": {},
+    "settings": { "propertySettings": {} },
     "nextAction": {
       "name": "invia_email",
       "type": "PIECE",
       "valid": true,
       "displayName": "Invia Email",
-      "lastUpdatedDate": "2024-04-28T10:30:00.000Z",
       "settings": {
         "pieceName": "@activepieces/piece-gmail",
-        "pieceVersion": "0.12.2",
+        "pieceVersion": "0.0.1",
         "actionName": "send_email",
         "input": {
           "subject": "Ciao!",
@@ -139,9 +140,9 @@ Planning (ZERO USER INTERACTION REQUIRED - ALL IDs ARE DYNAMIC):
   Step 2: Create a worksheet inside it → output.worksheetId is available
   Step 3: Fetch list of earthquakes → output is an array
   Step 4: LOOP over each earthquake (LOOP_ON_ITEMS)
-  Step 5: Inside loop → insert one row. Use {{steps.xxx.output.field}} for IDs.
+  Step 5: Inside loop → insert one row. Use {{xxx.field}} for IDs.
 
-KEY RULE: spreadsheetId and worksheetId come from previous steps. Use {{steps.crea_foglio.output.spreadsheetId}} and {{steps.crea_worksheet.output.worksheetId}}.
+KEY RULE: spreadsheetId and worksheetId come from previous steps. Use {{crea_foglio.spreadsheetId}} and {{crea_worksheet.worksheetId}}.
 
 \`\`\`json
 {
@@ -150,42 +151,32 @@ KEY RULE: spreadsheetId and worksheetId come from previous steps. Use {{steps.cr
     "name": "trigger",
     "type": "EMPTY",
     "valid": true,
-    "displayName": "Trigger Manuale",
-    "lastUpdatedDate": "2024-04-28T10:30:00.000Z",
     "settings": {},
     "nextAction": {
       "name": "crea_foglio",
       "type": "PIECE",
       "valid": true,
-      "displayName": "Crea Foglio",
-      "lastUpdatedDate": "2024-04-28T10:30:00.000Z",
       "settings": {
         "pieceName": "@activepieces/piece-google-sheets",
         "actionName": "create-spreadsheet",
-        "input": { "title": "Terremoti" },
-        "propertySettings": {}
+        "input": { "title": "Terremoti" }
       },
       "nextAction": {
         "name": "loop_terremoti",
         "type": "LOOP_ON_ITEMS",
         "valid": true,
-        "displayName": "Loop Terremoti",
-        "lastUpdatedDate": "2024-04-28T10:30:00.000Z",
-        "settings": { "items": "{{steps.fetch.output}}" },
+        "settings": { "items": "{{fetch}}" },
         "firstLoopAction": {
           "name": "insert",
           "type": "PIECE",
           "valid": true,
-          "displayName": "Inserisci Riga",
-          "lastUpdatedDate": "2024-04-28T10:30:00.000Z",
           "settings": {
             "pieceName": "@activepieces/piece-google-sheets",
             "actionName": "insert_row",
             "input": {
-              "spreadsheetId": "{{steps.crea_foglio.output.spreadsheetId}}",
-              "values": { "Mag": "{{steps.loop_terremoti.output.item.mag}}" }
-            },
-            "propertySettings": {}
+              "spreadsheetId": "{{crea_foglio.spreadsheetId}}",
+              "values": { "Mag": "{{loop_terremoti.item.mag}}" }
+            }
           }
         }
       }
@@ -267,9 +258,15 @@ KEY RULE: spreadsheetId and worksheetId come from previous steps. Use {{steps.cr
                 let inString = false
                 let escape = false
                 for (const ch of cleaned) {
-                    if (escape) { escape = false; continue }
-                    if (ch === '\\') { escape = true; continue }
-                    if (ch === '"') { inString = !inString; continue }
+                    if (escape) {
+                        escape = false; continue 
+                    }
+                    if (ch === '\\') {
+                        escape = true; continue 
+                    }
+                    if (ch === '"') {
+                        inString = !inString; continue 
+                    }
                     if (inString) continue
                     if (ch === '{') braces++
                     else if (ch === '}') braces--
@@ -333,8 +330,32 @@ KEY RULE: spreadsheetId and worksheetId come from previous steps. Use {{steps.cr
             // Auto-fix piece versions to prevent 400/404 errors due to LLM hallucinations
             if (flowJson && flowJson.trigger) {
                 const fixVersions = (step: any, parent?: any, key?: string) => {
-                    if (!step) return
+                    if (isNil(step)) return
                     
+                    // Recursive helper to fix hallucinated mappings like {{steps.xxx.output.field}} -> {{steps.xxx.field}}
+                    const fixMappings = (obj: any): any => {
+                        if (isNil(obj)) return obj
+                        if (typeof obj === 'string') {
+                            // Fix hallucinated mappings: {{steps.xxx.output.field}} or {{steps.xxx.field}} -> {{xxx.field}}
+                            return obj.replace(/\{\{\s*(?:steps\.)?([\w_]+)(?:\.output)?\.([\w_.]+)\s*\}\}/g, '{{$1.$2}}')
+                        }
+                        if (Array.isArray(obj)) {
+                            return obj.map(item => fixMappings(item))
+                        }
+                        if (typeof obj === 'object') {
+                            const newObj: any = {}
+                            for (const k in obj) {
+                                newObj[k] = fixMappings(obj[k])
+                            }
+                            return newObj
+                        }
+                        return obj
+                    }
+
+                    // Apply mapping fix to the entire step object early
+                    const fixedStep = fixMappings(step)
+                    Object.assign(step, fixedStep)
+
                     // Remove steps whose type is not a valid Activepieces action type.
                     const validActionTypes = ['PIECE', 'PIECE_TRIGGER', 'LOOP_ON_ITEMS', 'BRANCH', 'EMPTY']
                     if (!validActionTypes.includes(step.type)) {
@@ -345,24 +366,55 @@ KEY RULE: spreadsheetId and worksheetId come from previous steps. Use {{steps.cr
                         return
                     }
 
-                    // Ensure settings and input exist early
-                    if (!step.settings) step.settings = {}
-                    if (!step.settings.input) step.settings.input = {}
-                    if (!step.settings.propertySettings) step.settings.propertySettings = {}
+                    // 1. Common initialization for ALL steps
+                    if (isNil(step.settings)) step.settings = {}
+                    step.valid = true
+                    if (isNil(step.displayName)) {
+                        step.displayName = step.name.split('_').map((s: string) => s.charAt(0).toUpperCase() + s.slice(1)).join(' ')
+                    }
 
-                    // EMPTY trigger must have strictly empty settings
+                    // 2. Type-specific logic
                     if (step.type === 'EMPTY') {
                         step.settings = {}
                     }
-                    
-                    // Mark every step as valid so the builder allows testing and saving
-                    step.valid = true
-                    if (!step.lastUpdatedDate) {
-                        step.lastUpdatedDate = new Date().toISOString()
+
+                    if (step.type === 'LOOP_ON_ITEMS') {
+                        // AI MISTAKE: sometimes puts firstLoopAction inside settings. Move it out.
+                        if (step.settings?.firstLoopAction) {
+                            log.info({ stepName: step.name }, '[ChatbotService#fixVersions] Moving firstLoopAction out of settings')
+                            step.firstLoopAction = step.settings.firstLoopAction
+                            delete step.settings.firstLoopAction
+                        }
+                        // LOOP_ON_ITEMS must strictly only have "items" in settings and it MUST be a string (expression)
+                        let items = step.settings.items
+                        if (Array.isArray(items)) {
+                            items = `{{ ${JSON.stringify(items)} }}`
+                        }
+                        step.settings = { items: items || '' }
+                    }
+
+                    if (step.type === 'BRANCH') {
+                        // AI MISTAKE: sometimes puts onTrueNextAction/onFalseNextAction inside settings. Move them out.
+                        if (step.settings?.onTrueNextAction) {
+                            step.onTrueNextAction = step.settings.onTrueNextAction
+                            delete step.settings.onTrueNextAction
+                        }
+                        if (step.settings?.onFalseNextAction) {
+                            step.onFalseNextAction = step.settings.onFalseNextAction
+                            delete step.settings.onFalseNextAction
+                        }
+                        // BRANCH must have conditions in settings
+                        if (isNil(step.settings.conditions)) {
+                            step.settings.conditions = [[{ operator: 'EXISTS', firstValue: '', secondValue: '' }]]
+                        }
                     }
 
                     const isPieceStep = step.type === 'PIECE' || step.type === 'PIECE_TRIGGER'
                     if (isPieceStep) {
+                        // Ensure input and propertySettings exist for pieces
+                        if (isNil(step.settings.input)) step.settings.input = {}
+                        if (isNil(step.settings.propertySettings)) step.settings.propertySettings = {}
+
                         // Ensure pieceVersion is NEVER undefined to prevent frontend crash
                         step.settings.pieceVersion = step.settings.pieceVersion || '0.0.1'
                         
@@ -379,11 +431,6 @@ KEY RULE: spreadsheetId and worksheetId come from previous steps. Use {{steps.cr
                                 step.settings.pieceName = actualPiece.name
                                 step.settings.pieceVersion = actualPiece.version
                                 
-                                // Ensure input object exists to prevent frontend crashes
-                                if (!step.settings.input) {
-                                    step.settings.input = {}
-                                }
-
                                 // Auto-fix for Gmail piece: convert email strings to arrays if necessary
                                 const isGmail = actualPiece.name === '@activepieces/piece-gmail' || actualPiece.name === 'gmail'
                                 if (isGmail) {
@@ -415,30 +462,13 @@ KEY RULE: spreadsheetId and worksheetId come from previous steps. Use {{steps.cr
                             else {
                                 step.settings.pieceVersion = step.settings.pieceVersion || '0.0.1'
                             }
-                        } else {
-                             step.settings.pieceVersion = step.settings.pieceVersion || '0.0.1'
                         }
-
-                    // Remove propertySettings from LOOP_ON_ITEMS — only "items" is valid there
-                    if (step.type === 'LOOP_ON_ITEMS') {
-                        // AI MISTAKE: sometimes puts firstLoopAction inside settings. Move it out.
-                        if (step.settings?.firstLoopAction) {
-                            log.info({ stepName: step.name }, '[ChatbotService#fixVersions] Moving firstLoopAction out of settings')
-                            step.firstLoopAction = step.settings.firstLoopAction
-                            delete step.settings.firstLoopAction
+                        else {
+                            step.settings.pieceVersion = step.settings.pieceVersion || '0.0.1'
                         }
-                        // LOOP_ON_ITEMS must NOT have input or propertySettings at the step level
-                        if (step.settings) {
-                            const newSettings = { items: step.settings.items }
-                            step.settings = newSettings
-                        }
-                        if (step.propertySettings) delete step.propertySettings
                     }
 
-                    if (!step.displayName) {
-                        step.displayName = step.name.split('_').map((s: string) => s.charAt(0).toUpperCase() + s.slice(1)).join(' ')
-                    }
-                    }
+                    // 3. Recursive processing of child actions
                     if (step.firstLoopAction) {
                         fixVersions(step.firstLoopAction, step, 'firstLoopAction')
                     }
