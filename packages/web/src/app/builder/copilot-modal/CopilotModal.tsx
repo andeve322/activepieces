@@ -2,7 +2,16 @@ import { FlowOperationType, FlowTriggerType } from '@activepieces/shared';
 import { useMutation } from '@tanstack/react-query';
 import axios from 'axios';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { Send, Sparkles, Wand2, User, Bot, Loader2, X, GripHorizontal } from 'lucide-react';
+import {
+  Send,
+  Sparkles,
+  Wand2,
+  User,
+  Bot,
+  Loader2,
+  X,
+  GripHorizontal,
+} from 'lucide-react';
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
@@ -90,45 +99,100 @@ export const CopilotModal = ({
 
   const handleApplyFlow = (flowJson: any) => {
     console.log('Applying flowJson:', JSON.stringify(flowJson, null, 2));
-    
+
+    // Normalize: LLMs often put nextAction at root level instead of inside trigger.
+    if (flowJson.nextAction && !flowJson.trigger?.nextAction) {
+      flowJson.trigger = {
+        ...flowJson.trigger,
+        nextAction: flowJson.nextAction,
+      };
+      delete flowJson.nextAction;
+    }
+
     // Sanitize generated JSON for Activepieces
     const sanitizedTrigger = { ...flowJson.trigger };
-    if (!sanitizedTrigger.type || (sanitizedTrigger.type === 'PIECE' && !sanitizedTrigger.settings?.pieceName)) {
+    if (
+      !sanitizedTrigger.type ||
+      (sanitizedTrigger.type === 'PIECE' &&
+        !sanitizedTrigger.settings?.pieceName)
+    ) {
       sanitizedTrigger.type = FlowTriggerType.EMPTY;
       sanitizedTrigger.settings = {};
-      sanitizedTrigger.displayName = 'Trigger';
+      sanitizedTrigger.displayName = sanitizedTrigger.displayName || 'Trigger';
+      sanitizedTrigger.settings = {};
+      sanitizedTrigger.valid = false;
+    } else {
+      sanitizedTrigger.valid = true;
     }
     sanitizedTrigger.name = 'trigger';
 
     // Recursive function to ensure unique and meaningful step names and clean up empty nextAction
     const usedNames = new Set<string>();
-    const assignNames = (step: any, index: number) => {
+    const assignNames = (
+      step: any,
+      index: number,
+      parent?: any,
+      key?: string,
+    ) => {
       if (!step) return;
+
+      // Clean up invalid EMPTY actions at the end of chains (LLM common mistake)
+      if (step.type === 'EMPTY' && index > 0 && parent && key) {
+        delete parent[key];
+        return;
+      }
 
       // Clean up empty nextAction - backend fails if it's an empty object
       if (step.nextAction && Object.keys(step.nextAction).length === 0) {
         delete step.nextAction;
       }
 
-      if (step.settings) {
-          // Ensure propertySettings is initialized
-          if (!step.settings.propertySettings) {
-              step.settings.propertySettings = {};
-          }
-          // Flatten single-element arrays back to scalars (common AI over-wrapping mistake).
-          // Exception: Gmail email fields must stay as arrays — the piece schema requires it.
-          const gmailArrayFields = new Set(['receiver', 'cc', 'bcc', 'reply_to']);
-          const isGmailStep = step.settings.pieceName === '@activepieces/piece-gmail' || step.settings.pieceName === 'gmail';
-          for (const key in step.settings.input) {
-              if (Array.isArray(step.settings.input[key]) && step.settings.input[key].length === 1) {
-                  if (isGmailStep && gmailArrayFields.has(key)) continue;
-                  step.settings.input[key] = step.settings.input[key][0];
-              }
-          }
+      // Every step must be marked valid for the builder to allow testing and saving
+      step.valid = true;
+
+      // Critical fix for "pieceVersion.startsWith is not a function" crash
+      if ((step.type === 'PIECE' || step.type === 'PIECE_TRIGGER') && !step.settings?.pieceVersion) {
+        if (!step.settings) step.settings = {};
+        step.settings.pieceVersion = '0.0.1';
       }
-      
+
+      if (step.settings?.firstLoopAction) {
+        step.firstLoopAction = step.settings.firstLoopAction;
+        delete step.settings.firstLoopAction;
+      }
+
+      if (!step.settings) {
+        step.settings = {};
+      }
+
+      if (step.type === 'LOOP_ON_ITEMS') {
+        step.settings = { items: step.settings.items };
+      } else {
+        if (!step.settings.input) {
+          step.settings.input = {};
+        }
+        if (!step.settings.propertySettings) {
+          step.settings.propertySettings = {};
+        }
+      }
+        // Flatten single-element arrays back to scalars (common AI over-wrapping mistake).
+        // Exception: Gmail email fields must stay as arrays — the piece schema requires it.
+        const gmailArrayFields = new Set(['receiver', 'cc', 'bcc', 'reply_to']);
+        const isGmailStep =
+          step.settings.pieceName === '@activepieces/piece-gmail' ||
+          step.settings.pieceName === 'gmail';
+        for (const key in step.settings.input) {
+          if (
+            Array.isArray(step.settings.input[key]) &&
+            step.settings.input[key].length === 1
+          ) {
+            if (isGmailStep && gmailArrayFields.has(key)) continue;
+            step.settings.input[key] = step.settings.input[key][0];
+          }
+        }
+
       let baseName = step.name;
-      
+
       // Sanitization function
       const slugify = (str: string) => {
         return str
@@ -143,9 +207,12 @@ export const CopilotModal = ({
       } else {
         // If name is missing or generic, try to use pieceName or type
         if (!baseName || baseName.match(/^step_?\d*$/)) {
-          baseName = step.settings?.pieceName?.replace('@activepieces/piece-', '') || step.type?.toLowerCase() || 'step';
+          baseName =
+            step.settings?.pieceName?.replace('@activepieces/piece-', '') ||
+            step.type?.toLowerCase() ||
+            'step';
         }
-        
+
         let finalName = slugify(baseName);
         let counter = 1;
         while (usedNames.has(finalName)) {
@@ -154,14 +221,17 @@ export const CopilotModal = ({
         }
         step.name = finalName;
       }
-      
+
       usedNames.add(step.name);
 
       // Fix terminology and problematic versions
       if (step.type === 'PIECE' && step.settings) {
         // Brutal fix for schedule 0.2.1 404 error
-        if (step.settings.pieceName === 'schedule' || step.settings.pieceName === '@activepieces/piece-schedule') {
-           step.settings.pieceVersion = '~0.1.0';
+        if (
+          step.settings.pieceName === 'schedule' ||
+          step.settings.pieceName === '@activepieces/piece-schedule'
+        ) {
+          step.settings.pieceVersion = '~0.1.0';
         }
 
         if (index === 0) {
@@ -173,7 +243,7 @@ export const CopilotModal = ({
             step.settings.actionName = step.settings.triggerName;
           }
         }
-        
+
         if (!step.displayName) {
           // Make displayName pretty: "Fetch Data" instead of "fetch_data"
           step.displayName = step.name
@@ -187,15 +257,15 @@ export const CopilotModal = ({
       }
 
       if (step.firstLoopAction) {
-        assignNames(step.firstLoopAction, index + 1);
+        assignNames(step.firstLoopAction, index + 1, step, 'firstLoopAction');
       }
       if (step.children) {
-        step.children.forEach((child: any) => {
-          if (child) assignNames(child, index + 1);
+        step.children.forEach((child: any, i: number) => {
+          if (child) assignNames(child, index + 1, step.children, i.toString());
         });
       }
       if (step.nextAction) {
-        assignNames(step.nextAction, index + 1);
+        assignNames(step.nextAction, index + 1, step, 'nextAction');
       }
     };
 
@@ -206,8 +276,7 @@ export const CopilotModal = ({
       request: {
         displayName: flowJson.displayName || 'Generated Workflow',
         trigger: sanitizedTrigger,
-        schemaVersion: flowJson.schemaVersion || '1',
-        notes: flowJson.notes || [],
+        notes: [],
       },
     });
     onOpenChange(false);
@@ -227,7 +296,7 @@ export const CopilotModal = ({
           className="fixed bottom-10 right-10 w-[400px] h-[600px] z-[50] flex flex-col shadow-2xl rounded-2xl border bg-background/95 backdrop-blur-md overflow-hidden"
         >
           {/* Header & Drag Handle */}
-          <div 
+          <div
             onPointerDown={(e) => dragControls.start(e)}
             className="flex items-center justify-between p-4 border-b bg-primary/5 cursor-grab active:cursor-grabbing group"
           >
@@ -237,10 +306,10 @@ export const CopilotModal = ({
               </div>
               <span className="font-semibold text-sm">Copilot Assistant</span>
             </div>
-            
+
             <div className="flex items-center gap-1">
               <div className="p-1 rounded transition-colors mr-2">
-                 <GripHorizontal className="w-4 h-4 text-muted-foreground" />
+                <GripHorizontal className="w-4 h-4 text-muted-foreground" />
               </div>
               <Button
                 variant="ghost"
@@ -278,12 +347,15 @@ export const CopilotModal = ({
                     </span>
                   </div>
                   <div
-                    className={cn('rounded-2xl p-3 text-sm border select-text', {
-                      'bg-primary text-primary-foreground border-primary/20 rounded-tr-none':
-                        m.role === 'user',
-                      'bg-muted/50 text-foreground border-border rounded-tl-none shadow-sm':
-                        m.role === 'assistant',
-                    })}
+                    className={cn(
+                      'rounded-2xl p-3 text-sm border select-text',
+                      {
+                        'bg-primary text-primary-foreground border-primary/20 rounded-tr-none':
+                          m.role === 'user',
+                        'bg-muted/50 text-foreground border-border rounded-tl-none shadow-sm':
+                          m.role === 'assistant',
+                      },
+                    )}
                   >
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm, remarkBreaks]}
@@ -305,7 +377,14 @@ export const CopilotModal = ({
                         ),
                         li: ({ children }) => <li>{children}</li>,
                         code: ({ children }) => (
-                          <code className={cn("rounded px-1 py-0.5 font-mono text-[10px]", m.role === 'user' ? "bg-white/20" : "bg-primary/10")}>
+                          <code
+                            className={cn(
+                              'rounded px-1 py-0.5 font-mono text-[10px]',
+                              m.role === 'user'
+                                ? 'bg-white/20'
+                                : 'bg-primary/10',
+                            )}
+                          >
                             {children}
                           </code>
                         ),
@@ -319,41 +398,74 @@ export const CopilotModal = ({
                   </div>
                   {(() => {
                     let activeFlowJson = m.flowJson;
-                    
+
                     // Frontend safety net: try to extract JSON if server missed it
                     if (!activeFlowJson && m.role === 'assistant') {
-                        const jsonMatch = m.content.match(/```(?:json|JSON)?\s*([\s\S]*?)```/) || m.content.match(/(\{[\s\S]*?"trigger"[\s\S]*?\})/);
-                        if (jsonMatch) {
-                            try {
-                                // Clean common dirty JSON markers
-                                const cleanStr = jsonMatch[1].replace(/\/\/.*$/gm, '').replace(/,(\s*[}\]])/g, '$1').trim();
-                                activeFlowJson = JSON.parse(cleanStr);
-                            } catch (e) {}
+                      // 1. Try markdown first
+                      const jsonMatch = m.content.match(
+                        /```(?:json|JSON|)?\s*(\{[\s\S]*?\})\s*```/i,
+                      );
+                      if (jsonMatch) {
+                        try {
+                          const cleanStr = jsonMatch[1]
+                            .replace(/\/\/.*$/gm, '')
+                            .replace(/,(\s*[}\]])/g, '$1')
+                            .trim();
+                          activeFlowJson = JSON.parse(cleanStr);
+                        } catch (e) {}
+                      }
+
+                      // 2. Try widest range of { ... }
+                      if (!activeFlowJson) {
+                        const firstBrace = m.content.indexOf('{');
+                        const lastBrace = m.content.lastIndexOf('}');
+                        if (
+                          firstBrace !== -1 &&
+                          lastBrace !== -1 &&
+                          lastBrace > firstBrace
+                        ) {
+                          const candidateStr = m.content.substring(
+                            firstBrace,
+                            lastBrace + 1,
+                          );
+                          try {
+                            const cleanStr = candidateStr
+                              .replace(/\/\/.*$/gm, '')
+                              .replace(/,(\s*[}\]])/g, '$1')
+                              .trim();
+                            const candidate = JSON.parse(cleanStr);
+                            if (candidate.trigger || candidate.flows) {
+                              activeFlowJson = candidate;
+                            }
+                          } catch (e) {}
                         }
+                      }
                     }
 
                     if (activeFlowJson) {
                       return (
                         <div className="flex gap-2 w-full mt-2">
-                            <Button
-                                onClick={() => handleApplyFlow(activeFlowJson)}
-                                className="flex-1 gap-2 bg-gradient-to-r from-primary to-primary/80 hover:scale-[1.02] transition-transform shadow-md"
-                                size="sm"
-                            >
-                                <Wand2 className="w-4 h-4" />
-                                Applica Workflow
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-2"
-                                onClick={() => {
-                                    navigator.clipboard.writeText(JSON.stringify(activeFlowJson, null, 2));
-                                }}
-                            >
-                                <Send className="w-4 h-4 rotate-90" />
-                                Copia
-                            </Button>
+                          <Button
+                            onClick={() => handleApplyFlow(activeFlowJson)}
+                            className="flex-1 gap-2 bg-gradient-to-r from-primary to-primary/80 hover:scale-[1.02] transition-transform shadow-md"
+                            size="sm"
+                          >
+                            <Wand2 className="w-4 h-4" />
+                            Applica Workflow
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2"
+                            onClick={() => {
+                              navigator.clipboard.writeText(
+                                JSON.stringify(activeFlowJson, null, 2),
+                              );
+                            }}
+                          >
+                            <Send className="w-4 h-4 rotate-90" />
+                            Copia
+                          </Button>
                         </div>
                       );
                     }

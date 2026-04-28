@@ -43,8 +43,8 @@ import { NEW_FLOW_QUERY_PARAM } from '@/lib/route-utils';
 import { cn } from '@/lib/utils';
 
 import FlowActionMenu from '../../components/flow-actions-menu';
-import { flowCanvasConsts } from '../flow-canvas/utils/consts';
 import { CopilotModal } from '../copilot-modal';
+import { flowCanvasConsts } from '../flow-canvas/utils/consts';
 
 import { BuilderFlowStatusSection } from './flow-status';
 
@@ -210,7 +210,11 @@ export const BuilderHeader = () => {
       )}
 
       <BuilderFlowStatusSection></BuilderFlowStatusSection>
-      <CopilotModal open={isCopilotOpen} onOpenChange={setIsCopilotOpen} applyOperation={applyOperation} />
+      <CopilotModal
+        open={isCopilotOpen}
+        onOpenChange={setIsCopilotOpen}
+        applyOperation={applyOperation}
+      />
     </div>
   );
 

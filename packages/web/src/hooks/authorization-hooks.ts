@@ -1,16 +1,9 @@
-import {
-  ApEdition,
-  ApFlagId,
-  isNil,
-  Permission,
-  PlatformRole,
-} from '@activepieces/shared';
+import { ApEdition, ApFlagId, isNil, Permission } from '@activepieces/shared';
 import { useQuery } from '@tanstack/react-query';
 
 import { authenticationApi } from '@/api/authentication-api';
 import { platformApi } from '@/api/platforms-api';
 import { flagsHooks } from '@/hooks/flags-hooks';
-import { userHooks } from '@/hooks/user-hooks';
 import { authenticationSession } from '@/lib/authentication-session';
 
 export const useAuthorization = () => {
@@ -46,6 +39,5 @@ export const useAuthorization = () => {
 };
 
 export const useIsPlatformAdmin = () => {
-   return true; // Forza il ruolo di admin per vederlo nel frontend
-}
-
+  return true; // Forza il ruolo di admin per vederlo nel frontend
+};

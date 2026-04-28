@@ -34,115 +34,166 @@ export const chatbotService = {
         )
 
         const simplifiedPieces = fullPieces.filter(p => !isNil(p)).map(p => {
-            const mapProps = (items: Record<string, any>) => {
+            const mapInputProps = (items: Record<string, any>) => {
+                const result: Record<string, { required: string[], optional: string[] }> = {}
+                for (const [key, item] of Object.entries(items)) {
+                    const entries = Object.entries(item.props || {})
+                    result[key] = {
+                        required: entries.filter(([_, prop]: [string, any]) => (prop as any).required).map(([k]) => k),
+                        optional: entries.filter(([_, prop]: [string, any]) => !(prop as any).required).map(([k]) => k),
+                    }
+                }
+                return result
+            }
+
+            const mapOutputFields = (items: Record<string, any>) => {
                 const result: Record<string, string[]> = {}
                 for (const [key, item] of Object.entries(items)) {
-                    const requiredProps = Object.entries(item.props || {})
-                        .filter(([_, prop]: [string, any]) => prop.required)
-                        .map(([propKey, _]) => propKey)
-                    result[key] = requiredProps
+                    const sample = (item as any).sampleData
+                    if (sample && typeof sample === 'object' && !Array.isArray(sample)) {
+                        result[key] = Object.keys(sample)
+                    }
                 }
                 return result
             }
 
             return {
                 name: p!.name,
-                displayName: p!.displayName,
-                version: p!.version,
-                triggers: mapProps(p!.triggers),
-                actions: mapProps(p!.actions),
+                actions: mapInputProps(p!.actions),
+                triggers: mapInputProps(p!.triggers),
+                outputs: mapOutputFields(p!.actions),
             }
         })
 
         log.info(`Chatbot identified ${simplifiedPieces.length} relevant pieces for the prompt`)
 
-        const messages = [
+        const messages: any[] = [
             {
                 role: 'system',
-                content: `You are an Activepieces AI assistant. Generate valid workflow JSON based on user requests.
+                content: `You are an expert Activepieces workflow architect. Your job is to design and generate correct, complete, production-ready workflow JSON.
+
+══════════════════════════════════════════════
+CRITICAL GOAL: NO UNNECESSARY QUESTIONS
+══════════════════════════════════════════════
+- You MUST distinguish between STATIC DATA (emails, names) and DYNAMIC DATA (IDs, generated values).
+- NEVER ask the user for IDs (spreadsheetId, worksheetId, folderId, item_id) if a previous step generates them.
+- Use the {{steps.STEP_NAME.output.FIELD}} syntax to map outputs automatically.
+- If you see a piece that requires an ID (like Google Sheets), check if you can add a 'Create' or 'List' step before it to get that ID dynamically.
+- ONLY ask questions for truly missing personal information (e.g., 'What is the recipient email?').
+
+══════════════════════════════════════════════
+STRICT STRUCTURAL RULES
+══════════════════════════════════════════════
+- Step types: EMPTY (trigger only), PIECE_TRIGGER, PIECE, LOOP_ON_ITEMS. No others.
+- Every step/trigger MUST have "valid": true.
+- Every step/trigger MUST have "displayName" (e.g., "Trigger", "Invia Email").
+- Every step/trigger MUST have "lastUpdatedDate": "2024-04-28T10:30:00.000Z" (ISO string).
+- Gmail fields (receiver, cc, etc.) MUST be arrays: ["email@example.com"].
+- Google Sheets 'insert_row' values MUST be an object: {"Column Name": "Value"}.
+- nextAction MUST be nested inside the step, NEVER at the JSON root.
+- Loop variables: ALWAYS {{steps.LOOP_NAME.output.item.field}}.
 
 AVAILABLE PIECES:
 ${JSON.stringify(simplifiedPieces)}
 
-JSON EXAMPLE:
-{
-  "displayName": "Terremoti giornalieri",
-  "trigger": {
-    "name": "trigger",
-    "type": "PIECE_TRIGGER",
-    "settings": {
-      "pieceName": "@activepieces/piece-schedule",
-      "pieceVersion": "0.2.1",
-      "triggerName": "cron_expression",
-      "input": { "cron": "0 7 * * *" }
-    },
-    "nextAction": {
-      "name": "recupero_terremoti",
-      "type": "PIECE",
-      "settings": {
-        "pieceName": "@activepieces/piece-ingv",
-        "pieceVersion": "0.0.1",
-        "actionName": "get_recent_earthquakes",
-        "input": {}
-      },
-      "nextAction": {
-        "name": "invio_mail",
-        "type": "PIECE",
-        "settings": {
-          "pieceName": "@activepieces/piece-gmail",
-          "pieceVersion": "0.12.2",
-          "actionName": "send_email",
-          "input": {
-            "subject": "Terremoti del giorno prima",
-            "receiver": ["tua_email@example.com"],
-            "body": "Ecco la lista dei terremoti: {{steps.recupero_terremoti}}"
-          }
-        }
-      }
-    }
-  }
-}
-
-EXAMPLE — Send email manually (EMPTY trigger + Gmail):
+══════════════════════════════════════════════
+EXAMPLE 1 — Simple: Send email (EMPTY trigger)
+══════════════════════════════════════════════
+\`\`\`json
 {
   "displayName": "Invia Email",
   "trigger": {
     "name": "trigger",
     "type": "EMPTY",
-    "displayName": "Trigger",
-    "settings": { "propertySettings": {} },
     "valid": true,
+    "displayName": "Trigger",
+    "lastUpdatedDate": "2024-04-28T10:30:00.000Z",
+    "settings": {},
     "nextAction": {
       "name": "invia_email",
       "type": "PIECE",
+      "valid": true,
       "displayName": "Invia Email",
+      "lastUpdatedDate": "2024-04-28T10:30:00.000Z",
       "settings": {
         "pieceName": "@activepieces/piece-gmail",
-        "pieceVersion": "0.0.1",
+        "pieceVersion": "0.12.2",
         "actionName": "send_email",
         "input": {
-          "subject": "Oggetto della mail",
+          "subject": "Ciao!",
           "receiver": ["email@example.com"],
-          "body": "Corpo della mail."
+          "body": "Testo della mail."
         },
         "propertySettings": {}
       }
     }
   }
 }
+\`\`\`
 
-STRICT RULES:
-- If a specific trigger (like Schedule or Webhook) is NOT requested, ALWAYS use an EMPTY trigger (type: EMPTY).
-- Never use a PIECE trigger without a valid pieceName and triggerName.
-- Every step must have a unique, lowercase name with underscores (e.g., 'send_email', 'format_data').
-- Ensure all piece versions are '0.0.1'.
-- For the Gmail piece, ALL email fields (receiver, cc, bcc, reply_to) MUST always be arrays of strings: ["email@example.com"]. NEVER use a plain string.
-- Use 'PIECE' type for integration steps.
-- Only include 'nextAction' for steps that are not the last one.
-- Give each step a short, meaningful "name" (lowercase snake_case) based on its function.
-- Use {{ steps.step_name.field }} for data mapping.
-- If a piece requires specific user data (e.g., an email address), ASK the user before generating the workflow.
-- Be interactive: if the user's request is vague, ask clarifying questions.
+══════════════════════════════════════════════
+EXAMPLE 2 — Complex: Create a new Google Sheet, fetch 10 seismic events, insert each as a row via LOOP
+══════════════════════════════════════════════
+Planning (ZERO USER INTERACTION REQUIRED - ALL IDs ARE DYNAMIC):
+  Step 1: Create a new spreadsheet → output.spreadsheetId is available
+  Step 2: Create a worksheet inside it → output.worksheetId is available
+  Step 3: Fetch list of earthquakes → output is an array
+  Step 4: LOOP over each earthquake (LOOP_ON_ITEMS)
+  Step 5: Inside loop → insert one row. Use {{steps.xxx.output.field}} for IDs.
+
+KEY RULE: spreadsheetId and worksheetId come from previous steps. Use {{steps.crea_foglio.output.spreadsheetId}} and {{steps.crea_worksheet.output.worksheetId}}.
+
+\`\`\`json
+{
+  "displayName": "Terremoti su Google Sheets",
+  "trigger": {
+    "name": "trigger",
+    "type": "EMPTY",
+    "valid": true,
+    "displayName": "Trigger Manuale",
+    "lastUpdatedDate": "2024-04-28T10:30:00.000Z",
+    "settings": {},
+    "nextAction": {
+      "name": "crea_foglio",
+      "type": "PIECE",
+      "valid": true,
+      "displayName": "Crea Foglio",
+      "lastUpdatedDate": "2024-04-28T10:30:00.000Z",
+      "settings": {
+        "pieceName": "@activepieces/piece-google-sheets",
+        "actionName": "create-spreadsheet",
+        "input": { "title": "Terremoti" },
+        "propertySettings": {}
+      },
+      "nextAction": {
+        "name": "loop_terremoti",
+        "type": "LOOP_ON_ITEMS",
+        "valid": true,
+        "displayName": "Loop Terremoti",
+        "lastUpdatedDate": "2024-04-28T10:30:00.000Z",
+        "settings": { "items": "{{steps.fetch.output}}" },
+        "firstLoopAction": {
+          "name": "insert",
+          "type": "PIECE",
+          "valid": true,
+          "displayName": "Inserisci Riga",
+          "lastUpdatedDate": "2024-04-28T10:30:00.000Z",
+          "settings": {
+            "pieceName": "@activepieces/piece-google-sheets",
+            "actionName": "insert_row",
+            "input": {
+              "spreadsheetId": "{{steps.crea_foglio.output.spreadsheetId}}",
+              "values": { "Mag": "{{steps.loop_terremoti.output.item.mag}}" }
+            },
+            "propertySettings": {}
+          }
+        }
+      }
+    }
+  }
+}
+\`\`\`
+
 - Output ONLY the JSON block inside \`\`\`json \`\`\` followed by a short summary.`,
             },
             ...history,
@@ -175,7 +226,7 @@ STRICT RULES:
                     messages,
                     temperature: 0.3,
                 },
-                { headers, timeout: 60000 },
+                { headers, timeout: 300000 },
             )
         }
 
@@ -186,10 +237,13 @@ STRICT RULES:
                 response = await callLlm(provider, model)
             }
             catch (error: any) {
+                const groqError = error?.response?.data || error.message
+                log.error({ error: groqError }, 'Groq API failed')
+                
                 if (provider === 'groq') {
-                    log.warn('Groq failed, falling back to Ollama')
-                    // Explicitly use llama3.1:latest for Ollama to avoid using the Groq model name from env
-                    response = await callLlm('ollama', 'llama3.1:latest')
+                    const fallbackModel = process.env.CHATBOT_MODEL || 'gemma4:e4b'
+                    log.warn({ fallbackModel }, 'Falling back to Ollama...')
+                    response = await callLlm('ollama', fallbackModel)
                 }
                 else {
                     throw error
@@ -201,19 +255,39 @@ STRICT RULES:
 
             // Helper to clean "dirty" JSON from LLMs
             const cleanDirtyJson = (str: string) => {
-                return str
-                    .replace(/\/\/.*$/gm, '') // Remove single line comments
+                let cleaned = str
+                    .replace(/\/\/.*$/gm, '')         // Remove single-line comments
                     .replace(/\/\*[\s\S]*?\*\//g, '') // Remove multi-line comments
-                    .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
+                    .replace(/,(\s*[}\]])/g, '$1')    // Remove trailing commas
                     .trim()
+
+                // Auto-close unclosed braces/brackets — LLMs often truncate long JSON
+                let braces = 0
+                let brackets = 0
+                let inString = false
+                let escape = false
+                for (const ch of cleaned) {
+                    if (escape) { escape = false; continue }
+                    if (ch === '\\') { escape = true; continue }
+                    if (ch === '"') { inString = !inString; continue }
+                    if (inString) continue
+                    if (ch === '{') braces++
+                    else if (ch === '}') braces--
+                    else if (ch === '[') brackets++
+                    else if (ch === ']') brackets--
+                }
+                cleaned += ']'.repeat(Math.max(0, brackets))
+                cleaned += '}'.repeat(Math.max(0, braces))
+
+                return cleaned
             }
 
-            // 1. Try to extract from markdown blocks
-            const markdownMatches = [...reply.matchAll(/```(?:json|JSON)?\s*([\s\S]*?)```/g)]
+            // 1. Try to extract from markdown blocks (more flexible regex)
+            const markdownMatches = [...reply.matchAll(/```(?:json|JSON|)?\s*(\{[\s\S]*?\})\s*```/gi)]
             for (const match of markdownMatches) {
                 try {
                     const candidate = JSON.parse(cleanDirtyJson(match[1]))
-                    if (candidate.trigger) {
+                    if (candidate.trigger || candidate.flows) {
                         flowJson = candidate
                         reply = reply.replace(match[0], '').trim()
                         break
@@ -224,17 +298,22 @@ STRICT RULES:
                 }
             }
 
-            // 2. Fallback: search for any balanced JSON-like structure containing "trigger"
+            // 2. Fallback: search for the widest possible JSON-like structure
             if (!flowJson) {
-                const potentialJsonMatch = reply.match(/\{[\s\S]*?"trigger"[\s\S]*?\}/)
-                if (potentialJsonMatch) {
+                const firstBrace = reply.indexOf('{')
+                const lastBrace = reply.lastIndexOf('}')
+                
+                if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+                    const candidateStr = reply.substring(firstBrace, lastBrace + 1)
                     try {
-                        const candidate = JSON.parse(cleanDirtyJson(potentialJsonMatch[0]))
-                        flowJson = candidate
-                        reply = reply.replace(potentialJsonMatch[0], '').trim()
+                        const candidate = JSON.parse(cleanDirtyJson(candidateStr))
+                        if (candidate.trigger || candidate.flows) {
+                            flowJson = candidate
+                            reply = (reply.substring(0, firstBrace) + reply.substring(lastBrace + 1)).trim()
+                        }
                     }
                     catch (e) {
-                        log.error(`Failed to parse fallback JSON: ${e}`)
+                        log.error(`Failed to parse widest-range JSON: ${e}`)
                     }
                 }
             }
@@ -243,60 +322,134 @@ STRICT RULES:
                 reply = 'I\'ve generated the workflow for you! Click the button below to apply it.'
             }
 
+            // Normalize structure: LLMs often put nextAction at root level instead of inside trigger.
+            // Move it into trigger.nextAction where Activepieces expects it.
+            if (flowJson && flowJson.trigger && flowJson.nextAction && !flowJson.trigger.nextAction) {
+                log.info('[ChatbotService] Migrating root-level nextAction into trigger.nextAction')
+                flowJson.trigger.nextAction = flowJson.nextAction
+                delete flowJson.nextAction
+            }
+
             // Auto-fix piece versions to prevent 400/404 errors due to LLM hallucinations
             if (flowJson && flowJson.trigger) {
-                const fixVersions = (step: any) => {
+                const fixVersions = (step: any, parent?: any, key?: string) => {
                     if (!step) return
-                    if (step.type === 'PIECE' && step.settings && step.settings.pieceName) {
-                        const pieceName = step.settings.pieceName
-                        const actualPiece = piecesSummary.find(p => 
-                            p.name === pieceName || p.name === `@activepieces/piece-${pieceName}`,
-                        )
-                        if (actualPiece) {
-                            log.info({ pieceName, actualName: actualPiece.name }, '[ChatbotService#fixVersions] Piece found')
-                            step.settings.pieceName = actualPiece.name // ensure correct prefix
-                            step.settings.pieceVersion = actualPiece.version // force correct version
-                            
-                            // Ensure input object exists to prevent frontend crashes
-                            if (!step.settings.input) {
-                                step.settings.input = {}
-                            }
+                    
+                    // Remove steps whose type is not a valid Activepieces action type.
+                    const validActionTypes = ['PIECE', 'PIECE_TRIGGER', 'LOOP_ON_ITEMS', 'BRANCH', 'EMPTY']
+                    if (!validActionTypes.includes(step.type)) {
+                        if (parent && key) {
+                            log.warn({ stepName: step.name, type: step.type }, '[ChatbotService#fixVersions] Removing step with invalid type')
+                            delete parent[key]
+                        }
+                        return
+                    }
 
-                            // Auto-fix for Gmail piece: convert email strings to arrays if necessary
-                            const isGmail = actualPiece.name === '@activepieces/piece-gmail' || actualPiece.name === 'gmail'
-                            
-                            if (isGmail) {
-                                const arrayFields = ['receiver', 'cc', 'bcc', 'reply_to']
-                                arrayFields.forEach((field) => {
-                                    const value = step.settings.input[field]
-                                    // Coerce any string value to an array — no exceptions
-                                    if (value && typeof value === 'string') {
-                                        log.info({ field, value }, '[ChatbotService#fixVersions] Coercing Gmail field to array')
-                                        let cleaned = value
-                                        // Strip spurious wrapping brackets added by some LLMs: "[email]" → "email"
-                                        if (cleaned.startsWith('[') && cleaned.endsWith(']')) {
-                                            cleaned = cleaned.substring(1, cleaned.length - 1).replace(/['"]/g, '').trim()
+                    // Ensure settings and input exist early
+                    if (!step.settings) step.settings = {}
+                    if (!step.settings.input) step.settings.input = {}
+                    if (!step.settings.propertySettings) step.settings.propertySettings = {}
+
+                    // EMPTY trigger must have strictly empty settings
+                    if (step.type === 'EMPTY') {
+                        step.settings = {}
+                    }
+                    
+                    // Mark every step as valid so the builder allows testing and saving
+                    step.valid = true
+                    if (!step.lastUpdatedDate) {
+                        step.lastUpdatedDate = new Date().toISOString()
+                    }
+
+                    const isPieceStep = step.type === 'PIECE' || step.type === 'PIECE_TRIGGER'
+                    if (isPieceStep) {
+                        // Ensure pieceVersion is NEVER undefined to prevent frontend crash
+                        step.settings.pieceVersion = step.settings.pieceVersion || '0.0.1'
+                        
+                        const pieceName = step.settings.pieceName
+                        if (pieceName) {
+                            const normalizedName = pieceName.replace('@activepieces/piece-', '')
+                            const actualPiece = piecesSummary.find(p => 
+                                p.name === pieceName || 
+                                p.name === `@activepieces/piece-${normalizedName}` ||
+                                p.name.replace('@activepieces/piece-', '') === normalizedName,
+                            )
+                            if (actualPiece) {
+                                log.info({ pieceName, actualName: actualPiece.name }, '[ChatbotService#fixVersions] Piece found')
+                                step.settings.pieceName = actualPiece.name
+                                step.settings.pieceVersion = actualPiece.version
+                                
+                                // Ensure input object exists to prevent frontend crashes
+                                if (!step.settings.input) {
+                                    step.settings.input = {}
+                                }
+
+                                // Auto-fix for Gmail piece: convert email strings to arrays if necessary
+                                const isGmail = actualPiece.name === '@activepieces/piece-gmail' || actualPiece.name === 'gmail'
+                                if (isGmail) {
+                                    const arrayFields = ['receiver', 'cc', 'bcc', 'reply_to']
+                                    arrayFields.forEach((field) => {
+                                        const value = step.settings.input[field]
+                                        if (value && typeof value === 'string') {
+                                            log.info({ field, value }, '[ChatbotService#fixVersions] Coercing Gmail field to array')
+                                            let cleaned = value
+                                            if (cleaned.startsWith('[') && cleaned.endsWith(']')) {
+                                                cleaned = cleaned.substring(1, cleaned.length - 1).replace(/['"]/g, '').trim()
+                                            }
+                                            step.settings.input[field] = cleaned.includes('{{') ? [cleaned] : cleaned.split(',').map((e: string) => e.trim()).filter((e: string) => e.length > 0)
                                         }
-                                        // Template expressions ({{ ... }}) must be kept as-is inside an array
-                                        if (cleaned.includes('{{')) {
-                                            step.settings.input[field] = [cleaned]
-                                        }
-                                        else {
-                                            step.settings.input[field] = cleaned.split(',').map((e: string) => e.trim()).filter((e: string) => e.length > 0)
-                                        }
-                                    }
-                                })
+                                    })
+                                }
+                                // Auto-fix for Google Sheets insert_row: values must be an object, not array
+                                const isSheets = actualPiece.name === '@activepieces/piece-google-sheets'
+                                if (isSheets && step.settings.actionName === 'insert_row' && Array.isArray(step.settings.input?.values)) {
+                                    const headers: string[] = Array.isArray(step.settings.input.first_row_headers) ? step.settings.input.first_row_headers : []
+                                    const valuesObj: Record<string, string> = {}
+                                    ;(step.settings.input.values as string[]).forEach((v: string, i: number) => {
+                                        valuesObj[headers[i] || `Column${i + 1}`] = v
+                                    })
+                                    log.info('[ChatbotService#fixVersions] Converted insert_row values from array to object')
+                                    step.settings.input.values = valuesObj
+                                }
                             }
+                            else {
+                                step.settings.pieceVersion = step.settings.pieceVersion || '0.0.1'
+                            }
+                        } else {
+                             step.settings.pieceVersion = step.settings.pieceVersion || '0.0.1'
                         }
-                        else {
-                            log.warn({ pieceName }, '[ChatbotService#fixVersions] Piece not found, converting to EMPTY')
-                            // LLM hallucinated an uninstalled piece. Convert to EMPTY to avoid 400 errors.
-                            step.type = 'EMPTY'
-                            step.settings = {}
+
+                    // Remove propertySettings from LOOP_ON_ITEMS — only "items" is valid there
+                    if (step.type === 'LOOP_ON_ITEMS') {
+                        // AI MISTAKE: sometimes puts firstLoopAction inside settings. Move it out.
+                        if (step.settings?.firstLoopAction) {
+                            log.info({ stepName: step.name }, '[ChatbotService#fixVersions] Moving firstLoopAction out of settings')
+                            step.firstLoopAction = step.settings.firstLoopAction
+                            delete step.settings.firstLoopAction
                         }
+                        // LOOP_ON_ITEMS must NOT have input or propertySettings at the step level
+                        if (step.settings) {
+                            const newSettings = { items: step.settings.items }
+                            step.settings = newSettings
+                        }
+                        if (step.propertySettings) delete step.propertySettings
+                    }
+
+                    if (!step.displayName) {
+                        step.displayName = step.name.split('_').map((s: string) => s.charAt(0).toUpperCase() + s.slice(1)).join(' ')
+                    }
+                    }
+                    if (step.firstLoopAction) {
+                        fixVersions(step.firstLoopAction, step, 'firstLoopAction')
+                    }
+                    if (step.onTrueNextAction) {
+                        fixVersions(step.onTrueNextAction, step, 'onTrueNextAction')
+                    }
+                    if (step.onFalseNextAction) {
+                        fixVersions(step.onFalseNextAction, step, 'onFalseNextAction')
                     }
                     if (step.nextAction) {
-                        fixVersions(step.nextAction)
+                        fixVersions(step.nextAction, step, 'nextAction')
                     }
                 }
                 fixVersions(flowJson.trigger)
@@ -318,19 +471,28 @@ STRICT RULES:
                 displayName: 'Fallback Flow',
                 trigger: {
                     name: 'trigger',
-                    type: firstPiece ? 'PIECE' : 'EMPTY',
-                    settings: firstPiece ? {
-                        pieceName: firstPiece.name,
-                        pieceVersion: firstPiece.version,
-                        triggerName,
-                        input: {},
-                    } : {
-                        input: {},
+                    type: 'EMPTY',
+                    displayName: 'Manual Trigger',
+                    settings: {},
+                    valid: true,
+                    nextAction: {
+                        name: 'step_1',
+                        type: 'PIECE',
+                        displayName: firstPiece?.displayName || 'First Step',
+                        settings: {
+                            pieceName: firstPiece?.name || 'google-sheets',
+                            pieceVersion: firstPiece?.version || '0.0.1',
+                            actionName: triggerName,
+                            input: {},
+                        },
                     },
-                    nextAction: undefined,
                 },
             }
-            return { reply: 'Both Groq and Ollama failed. Please check your local Ollama instance.', flowJson: fallbackFlow }
+
+            return {
+                reply: `I'm sorry, I encountered an error while generating the workflow: ${errorMessage}. Here is a basic template to get you started.`,
+                flowJson: fallbackFlow,
+            }
         }
     },
 }
